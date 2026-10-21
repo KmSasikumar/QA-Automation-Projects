@@ -1,0 +1,249 @@
+{
+  "name": "Uptime Monitor",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "a23ba01d-8a55-4c48-ac3a-8922c18f909f",
+      "name": "Every 5 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.APP_URL || 'https://demo.realworld.io' }}",
+        "options": {
+          "timeout": 8000,
+          "fullResponse": true
+        }
+      },
+      "id": "e9c714ec-3b07-4c72-8c8b-8a454bf4e4b5",
+      "name": "Ping App",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ],
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Track totals + last status in workflow static data for the daily summary.\nconst s = $getWorkflowStaticData('global');\nconst item = $input.first().json;\nconst status = item.statusCode || 0;\ns.totalChecks = (s.totalChecks || 0) + 1;\nif (status === 200) { s.okChecks = (s.okChecks || 0) + 1; s.failStreak = 0; }\nelse { s.failStreak = (s.failStreak || 0) + 1; }\ns.lastStatus = status; s.lastChecked = new Date().toISOString();\nreturn [{ json: { statusCode: status } }];"
+      },
+      "id": "97368818-fb40-4f3f-8e9a-25963fa1ea36",
+      "name": "Record Check (static data)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "28bc8b9f-5926-4540-8710-cd2e6dd231df",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "notEquals",
+                "name": "filter.operator.number.notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e60a09d9-b245-436c-af4d-601427a1c0c3",
+      "name": "Is it DOWN? (status != 200)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DISCORD_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { content: 'UPTIME ALERT: app returned status ' + $json.statusCode + ' at ' + $now.toISO() } }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "d46337f7-e720-4b11-a6e8-99a878e490a4",
+      "name": "Alert to Discord (webhook via env)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 9,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "1d83975d-67c0-4a60-bb8e-17a8e3c97520",
+      "name": "Daily 9 AM Summary",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        220,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const s = $getWorkflowStaticData('global');\nconst pct = s.totalChecks ? Math.round(1000 * (s.okChecks || 0) / s.totalChecks) / 10 : 100;\nreturn [{ json: { message: 'DAILY UPTIME SUMMARY: ' + (s.okChecks || 0) + '/' + (s.totalChecks || 0) + ' checks OK (' + pct + '%), last status ' + (s.lastStatus || 'n/a') + ', last checked ' + (s.lastChecked || 'n/a') } }];"
+      },
+      "id": "16533301-e170-48d8-8749-3702d1b5f8a3",
+      "name": "Build Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DISCORD_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { content: $json.message } }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "9fd6338a-5b41-43db-90ba-6bde96636377",
+      "name": "Post Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        560
+      ]
+    }
+  ],
+  "connections": {
+    "Every 5 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Ping App",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ping App": {
+      "main": [
+        [
+          {
+            "node": "Record Check (static data)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record Check (static data)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Check (static data)": {
+      "main": [
+        [
+          {
+            "node": "Is it DOWN? (status != 200)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is it DOWN? (status != 200)": {
+      "main": [
+        [
+          {
+            "node": "Alert to Discord (webhook via env)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily 9 AM Summary": {
+      "main": [
+        [
+          {
+            "node": "Build Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Summary": {
+      "main": [
+        [
+          {
+            "node": "Post Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Kolkata"
+  },
+  "staticData": null,
+  "id": "UptimeMonitor01"
+}
